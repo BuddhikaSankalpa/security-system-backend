@@ -11,9 +11,16 @@ import employeeRoutes from './routes/employeeRoutes.js';
 import Alert from './models/Alert.js';
 import alertRoutes from './routes/alertRoutes.js';
 import Employee from './models/employee.js';
+// --- TEST ROUTE FOR SIMULATING SENSOR DATA ---
+import mqtt from 'mqtt';
+ // Add this near your other model imports
+import User from './models/User.js';
+
+
 
 // We will import mqttHandler here later
 import setupMQTT from './mqttHandler.js';
+
 
 dotenv.config();
 
@@ -89,6 +96,10 @@ app.post('/api/test-alert', (req, res) => {
     res.status(200).json({ message: "Alert sent!", alertData });
 });
 
+
+
+
+
 // --- TEST ROUTE FOR SIMULATING SENSOR DATA ---
 app.post('/api/test-sensor', (req, res) => {
     try {
@@ -107,7 +118,100 @@ app.post('/api/test-sensor', (req, res) => {
 });
 
 
+
+
+
 // --- TEST ROUTE FOR EMPLOYEE WATCH EMERGENCY ---
+const mqttClient = mqtt.connect('mqtt://192.168.35.15:1883');
+
+mqttClient.on('connect', () => {
+    console.log('Connected to MQTT Broker');
+
+    mqttClient.subscribe('esp32/employee', (err) => {
+        if (!err) {
+            console.log('Subscribed to topic: esp32/employee');
+        } else {
+            console.log('Subscription error:', err);
+        }
+    });
+});
+
+mqttClient.on('error', (err) => {
+    console.error('MQTT Error:', err);
+});
+
+mqttClient.on('offline', () => {
+    console.log('MQTT Client Offline');
+});
+
+mqttClient.on('reconnect', () => {
+    console.log('Reconnecting to MQTT Broker...');
+});
+
+mqttClient.on('message', async (topic, message) => {
+    try {
+        console.log(`MQTT Message Received on ${topic}: ${message.toString()}`);
+
+        const data = JSON.parse(message.toString());
+
+        // Extract ID and Floor based on the payload sent by ESP32 
+        // e.g., {"employeeId": "EMP-002", "floor": "01"}
+        const extractedId = data.ID || data.employeeId; 
+        const floorNumber = data.floor || "Unknown Floor"; // Default if not sent
+        const description = data.description;
+
+        const employee = await Employee.findOne({ employeeId: extractedId });
+
+        if (!employee) {
+            console.log(`Employee not found in DB for ID: ${extractedId}`);
+            return;
+        }
+
+        // --- 1. SAVE THE ALERT TO THE DATABASE ---
+        // Dynamically build the location using the floor sent by the ESP32
+        const alertLocation = `Floor ${floorNumber} - Field Operator`; 
+
+        const newAlert = new Alert({
+            type: 'Employee Emergency',
+            location: alertLocation,
+            severity: 'Critical',
+            description: description || 'Smart Watch Emergency Button Pressed',
+            status: 'Pending',
+            employeeId: employee._id
+        });
+
+        await newAlert.save();
+        console.log('Emergency Alert Saved & Broadcasted');
+        io.emit('new-emergency', newAlert);
+
+
+        // --- 2. FETCH NUMBERS & SEND BACK TO ESP32 ---
+        
+        // Fetch the primary Security Officer / Admin from the User collection
+        const adminUser = await User.findOne({ isAdmin: true });
+        const securityOfficerNumber = adminUser ? adminUser.phone : "N/A";
+
+        // Prepare the JSON payload with the 3 required numbers
+        const returnPayload = JSON.stringify({
+            securityOfficerNumber: securityOfficerNumber, 
+            emergencyContact: employee.emergencyContactNumber || "N/A",
+            emergencyServices: "1990"
+        });
+
+        // Publish back to the ESP32 using the specific topic
+        mqttClient.publish('esp32/wearable1', returnPayload, (err) => {
+            if (err) {
+                console.error('Failed to publish return numbers to ESP32:', err);
+            } else {
+                console.log(`📤 Sent numbers back to esp32/wearable1: ${returnPayload}`);
+            }
+        });
+
+    } catch (err) {
+        console.error('MQTT Processing Error:', err);
+    }
+});
+
 // --- TEST ROUTE FOR EMPLOYEE WATCH EMERGENCY ---
 app.post('/api/test-employee-alert', async (req, res) => {
     try {

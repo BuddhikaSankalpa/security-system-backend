@@ -7,9 +7,9 @@ const employeeSchema = new mongoose.Schema({
     phone: { type: String, required: true },
     employeeId: { type: String, required: true, unique: true }, // ex: EMP-001
     
-    // Newly added section
-    flow: { type: String, required: true }, // ex: FLOW 01
-    room: { type: String, required: true }, // ex: Room 02
+    // CHANGED: Replaced flow and room with emergency contact details
+    emergencyContactName: { type: String, required: true, trim: true }, 
+    emergencyContactNumber: { type: String, required: true, trim: true }, 
     
     password: { type: String, required: true },
     status: { type: String, default: "Active" }
