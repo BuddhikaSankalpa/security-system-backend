@@ -1,10 +1,14 @@
 import express from 'express';
-import { registerEmployee, getAllEmployees } from '../controllers/employeeController.js';
+// CHANGED: Imported deleteEmployee 
+import { registerEmployee, getAllEmployees, updateEmployee, deleteEmployee } from '../controllers/employeeController.js';
 
 const router = express.Router();
     
 router.post('/register', registerEmployee);
 router.get('/', getAllEmployees);
+router.put('/:id', updateEmployee);
 
+// --- NEW ROUTE FOR DELETING ---
+router.delete('/:id', deleteEmployee);
 
 export default router;

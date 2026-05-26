@@ -87,15 +87,24 @@ export async function getAllUsers(req, res) {
     }
 }
 
-// --- UPDATE USER (section to edit user information) ---
+// --- UPDATE USER (MODIFIED TO HANDLE PASSWORDS) ---
 export async function updateUser(req, res) {
     try {
         const { id } = req.params;
-        const { firstName, lastName, email, phone, role, isBlocked } = req.body;
+        const { firstName, lastName, email, phone, role, isBlocked, password } = req.body;
+
+        // Prepare the base update object
+        let updateData = { firstName, lastName, email, phone, role, isBlocked };
+
+        // If a new password is provided, hash it before saving
+        if (password && password.trim() !== "") {
+            const salt = bcrypt.genSaltSync(10);
+            updateData.password = bcrypt.hashSync(password, salt);
+        }
 
         const updatedUser = await User.findByIdAndUpdate(
             id,
-            { firstName, lastName, email, phone, role, isBlocked },
+            updateData,
             { new: true }
         );
 
