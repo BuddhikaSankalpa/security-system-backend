@@ -99,6 +99,7 @@ app.post('/api/test-alert', (req, res) => {
 
 
 
+//----------------------------------------------------------------------------------------------------------------------------------------------
 
 // --- TEST ROUTE FOR SIMULATING SENSOR DATA ---
 app.post('/api/test-sensor', (req, res) => {
@@ -122,7 +123,7 @@ app.post('/api/test-sensor', (req, res) => {
 
 
 // --- TEST ROUTE FOR EMPLOYEE WATCH EMERGENCY ---
-const mqttClient = mqtt.connect('mqtt://192.168.35.15:1883');
+const mqttClient = mqtt.connect('mqtt://192.168.35.40:1883');
 
 mqttClient.on('connect', () => {
     console.log('Connected to MQTT Broker');
@@ -132,6 +133,15 @@ mqttClient.on('connect', () => {
             console.log('Subscribed to topic: esp32/employee');
         } else {
             console.log('Subscription error:', err);
+        }
+    });
+
+    // NEW: Subscribe to the esp32/emergency topic
+    mqttClient.subscribe('esp32/emergency', (err) => {
+        if (!err) {
+            console.log('Subscribed to topic: esp32/emergency');
+        } else {
+            console.log('Subscription error for esp32/emergency:', err);
         }
     });
 });
@@ -154,63 +164,87 @@ mqttClient.on('message', async (topic, message) => {
 
         const data = JSON.parse(message.toString());
 
-        // Extract ID and Floor based on the payload sent by ESP32 
-        // e.g., {"employeeId": "EMP-002", "floor": "01"}
-        const extractedId = data.ID || data.employeeId; 
-        const floorNumber = data.floor || "Unknown Floor"; // Default if not sent
-        const description = data.description;
+        // --- EXISTING LOGIC FOR ESP32/EMPLOYEE ---
+        if (topic === 'esp32/employee') {
+            // Extract ID and Floor based on the payload sent by ESP32 
+            // e.g., {"employeeId": "EMP-002", "floor": "01"}
+            const extractedId = data.ID || data.employeeId; 
+            const floorNumber = data.floor || "Unknown Floor"; // Default if not sent
+            const description = data.description;
 
-        const employee = await Employee.findOne({ employeeId: extractedId });
+            const employee = await Employee.findOne({ employeeId: extractedId });
 
-        if (!employee) {
-            console.log(`Employee not found in DB for ID: ${extractedId}`);
-            return;
-        }
-
-        // --- 1. SAVE THE ALERT TO THE DATABASE ---
-        // Dynamically build the location using the floor sent by the ESP32
-        const alertLocation = `Floor ${floorNumber} - Field Operator`; 
-
-        const newAlert = new Alert({
-            type: 'Employee Emergency',
-            location: alertLocation,
-            severity: 'Critical',
-            description: description || 'Smart Watch Emergency Button Pressed',
-            status: 'Pending',
-            employeeId: employee._id
-        });
-
-        await newAlert.save();
-        console.log('Emergency Alert Saved & Broadcasted');
-        io.emit('new-emergency', newAlert);
-
-
-        // --- 2. FETCH NUMBERS & SEND BACK TO ESP32 ---
-        
-        // Fetch the primary Security Officer / Admin from the User collection
-        const adminUser = await User.findOne({ isAdmin: true });
-        const securityOfficerNumber = adminUser ? adminUser.phone : "N/A";
-
-        // Prepare the JSON payload with the 3 required numbers
-        const returnPayload = JSON.stringify({
-            securityOfficerNumber: securityOfficerNumber, 
-            emergencyContact: employee.emergencyContactNumber || "N/A",
-            emergencyServices: "1990"
-        });
-
-        // Publish back to the ESP32 using the specific topic
-        mqttClient.publish('esp32/wearable1', returnPayload, (err) => {
-            if (err) {
-                console.error('Failed to publish return numbers to ESP32:', err);
-            } else {
-                console.log(`📤 Sent numbers back to esp32/wearable1: ${returnPayload}`);
+            if (!employee) {
+                console.log(`Employee not found in DB for ID: ${extractedId}`);
+                return;
             }
-        });
+
+            // --- 1. SAVE THE ALERT TO THE DATABASE ---
+            // Dynamically build the location using the floor sent by the ESP32
+            const alertLocation = `Floor ${floorNumber} - Field Operator`; 
+
+            const newAlert = new Alert({
+                type: 'Employee Emergency',
+                location: alertLocation,
+                severity: 'Critical',
+                description: description || 'Smart Watch Emergency Button Pressed',
+                status: 'Pending',
+                employeeId: employee._id
+            });
+
+            await newAlert.save();
+            console.log('Emergency Alert Saved & Broadcasted');
+            io.emit('new-emergency', newAlert);
+
+
+            // --- 2. FETCH NUMBERS & SEND BACK TO ESP32 ---
+            
+            // Fetch the primary Security Officer / Admin from the User collection
+            const adminUser = await User.findOne({ isAdmin: true });
+            const securityOfficerNumber = adminUser ? adminUser.phone : "N/A";
+
+            // Prepare the JSON payload with the 3 required numbers
+            const returnPayload = JSON.stringify({
+                securityOfficerNumber: securityOfficerNumber, 
+                emergencyContact: employee.emergencyContactNumber || "N/A",
+                emergencyServices: "1990"
+            });
+
+            // Publish back to the ESP32 using the specific topic
+            mqttClient.publish('esp32/wearable1', returnPayload, (err) => {
+                if (err) {
+                    console.error('Failed to publish return numbers to ESP32:', err);
+                } else {
+                    console.log(`📤 Sent numbers back to esp32/wearable1: ${returnPayload}`);
+                }
+            });
+        } 
+        
+        // --- NEW LOGIC FOR ESP32/EMERGENCY ---
+        else if (topic === 'esp32/emergency') {
+            const newAlert = new Alert({
+                type: data.type || 'Button Emergency',
+                location: data.location || 'Unknown Location',
+                severity: data.severity || 'Critical',
+                description: data.description || 'Triggered via MQTT Button Alert',
+                status: 'Pending'
+            });
+
+            await newAlert.save();
+            console.log('Button Emergency Alert Saved & Broadcasted from MQTT');
+            io.emit('new-emergency', newAlert);
+        }
 
     } catch (err) {
         console.error('MQTT Processing Error:', err);
     }
 });
+
+
+
+
+
+//----------------------------------------------------------------------------------------------------------------------------------------------
 
 // --- TEST ROUTE FOR EMPLOYEE WATCH EMERGENCY ---
 app.post('/api/test-employee-alert', async (req, res) => {
@@ -250,37 +284,6 @@ app.post('/api/test-employee-alert', async (req, res) => {
         res.status(500).json({ message: "Error triggering employee alert" });
     }
 });
-
-
-
-app.post('/api/test-fire-alert', async (req, res) => {
-    try {
-        const { temp, humidity, aqi, location } = req.body;
-
-        const newAlert = new Alert({
-            type: 'Fire Emergency',
-            location: location || 'FLOW 02 - Room 01',
-            severity: 'Critical',
-            description: `Test Fire Signal! Temp: ${temp || 50}°C, Hum: ${humidity || 20}%, AQI: ${aqi || 200}`,
-            status: 'Pending'
-        });
-        
-        await newAlert.save();
-
-        const io = req.app.get('io');
-        if (io) {
-            io.emit('new-emergency', newAlert);
-        }
-        
-        res.status(200).json({ message: "🔥 Fire Alert Triggered!", alertData: newAlert });
-    } catch (err) {
-        console.error("Error triggering fire alert:", err);
-        res.status(500).json({ message: "Error triggering fire alert" });
-    }
-});
-
-//----------------------------------------------------------------------------------------------------------------------------------------------
-
 
 
 // --- Connect MQTT ---
