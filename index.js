@@ -11,6 +11,7 @@ import employeeRoutes from './routes/employeeRoutes.js';
 import Alert from './models/Alert.js';
 import alertRoutes from './routes/alertRoutes.js';
 import Employee from './models/employee.js';
+import sensorRoutes from './routes/sensorRoutes.js';
 // --- TEST ROUTE FOR SIMULATING SENSOR DATA ---
 import mqtt from 'mqtt';
  // Add this near your other model imports
@@ -59,6 +60,7 @@ io.on('connection', (socket) => {
 app.use('/api/users', userRoutes);
 app.use('/api/employees', employeeRoutes);
 app.use('/api/alerts', alertRoutes);
+app.use('/api/sensors', sensorRoutes);
 
 
 
@@ -295,3 +297,6 @@ httpServer.listen(PORT, () => {
     console.log('Server started successfully');
     console.log(`Listening on port ${PORT}`);
 });
+
+
+//----------------------------------------------------------------------------------------------------------------------------------------------
