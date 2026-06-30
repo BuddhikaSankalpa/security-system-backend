@@ -20,8 +20,7 @@ export async function resolveAlert(req, res) {
             { new: true }
         );
 
-        // ✔️ Newly added: Notify the socket that an Alert has been resolved
-        // Ensure index.js sets io so we can get it from the Express req object
+        // Notify the socket that an Alert has been resolved
         const io = req.app.get('io');
         if (io) {
             io.emit('alert-resolved', alertId); 
@@ -32,3 +31,58 @@ export async function resolveAlert(req, res) {
         res.status(500).json({ message: "Error resolving alert." });
     }
 }
+
+// --- DELETE ALL ALERTS ---
+export async function deleteAllAlerts(req, res) {
+    try {
+        // Delete all documents in the Alert collection
+        await Alert.deleteMany({});
+        
+        // Notify the socket that all alerts were deleted so the UI can clear immediately
+        const io = req.app.get('io');
+        if (io) {
+            io.emit('all-alerts-deleted'); 
+        }
+
+        res.status(200).json({ message: "All alerts successfully deleted." });
+    } catch (err) {
+        res.status(500).json({ message: "Error deleting alerts." });
+    }
+}
+
+
+// import Alert from '../models/Alert.js';
+
+// // --- GET ALL ALERTS ---
+// export async function getAllAlerts(req, res) {
+//     try {
+//         const alerts = await Alert.find().sort({ createdAt: -1 });
+//         res.status(200).json(alerts);
+//     } catch (err) {
+//         res.status(500).json({ message: "Error fetching alerts." });
+//     }
+// }
+
+// // --- UPDATE ALERT STATUS (Resolved) ---
+// export async function resolveAlert(req, res) {
+//     try {
+//         const alertId = req.params.id;
+//         const updatedAlert = await Alert.findByIdAndUpdate(
+//             alertId, 
+//             { status: 'Resolved', resolvedAt: new Date() }, 
+//             { new: true }
+//         );
+
+//         // ✔️ Newly added: Notify the socket that an Alert has been resolved
+//         // Ensure index.js sets io so we can get it from the Express req object
+//         const io = req.app.get('io');
+//         if (io) {
+//             io.emit('alert-resolved', alertId); 
+//         }
+
+//         res.status(200).json({ message: "Alert Resolved!", alert: updatedAlert });
+//     } catch (err) {
+//         res.status(500).json({ message: "Error resolving alert." });
+//     }
+// }
+

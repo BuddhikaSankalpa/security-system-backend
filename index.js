@@ -29,7 +29,7 @@ app.use(cors());
 const httpServer = createServer(app);
 const io = new Server(httpServer, {
     cors: {
-        origin: "*", // Allow React app to connect
+        origin: "*", 
         methods: ["GET", "POST"]
     }
 });
@@ -51,7 +51,7 @@ app.use('/api/employees', employeeRoutes);
 app.use('/api/alerts', alertRoutes);
 app.use('/api/sensors', sensorRoutes);
 
-// --- TEST ROUTE FOR SIMULATING SENSOR DATA ---
+// --- TEST ROUTES ---
 app.post('/api/test-alert', async (req, res) => {
     try {
         const alertData = req.body;
@@ -101,7 +101,6 @@ mqttClient.on('connect', () => {
         if (!err) console.log('Subscribed to topic: esp32/emergency');
     });
 
-    // NEW: Subscribe to the sensor data topic
     mqttClient.subscribe('esp32/sensor', (err) => {
         if (!err) console.log('Subscribed to topic: esp32/sensor');
     });
@@ -111,21 +110,28 @@ mqttClient.on('error', (err) => console.error('MQTT Error:', err));
 mqttClient.on('offline', () => console.log('MQTT Client Offline'));
 mqttClient.on('reconnect', () => console.log('Reconnecting to MQTT Broker...'));
 
+// Helper function to calculate average and handle nulls safely
+const getAverage = (val1, val2) => {
+    if (val1 != null && val2 != null) return Number(((val1 + val2) / 2).toFixed(2));
+    if (val1 != null) return val1;
+    if (val2 != null) return val2;
+    return 0; // Default fallback if both are null
+};
+
 mqttClient.on('message', async (topic, message) => {
     try {
         const data = JSON.parse(message.toString());
 
         // 1. HANDLE SENSOR DATA (Real-time Graph)
         if (topic === 'esp32/sensor') {
-            // Map ESP32 payload to Frontend expected keys
+            
+            // Calculate averages based on new requirements
             const sensorPayload = {
-                temp: data.dht11_2 || 0,
-                humidity: data.dht11_1 || 0,
-                airQuality: data.MQ2_1 || 0,
-                noic: data.MQ2_2 || 0
+                temp: getAverage(data.dht11_1, data.dht11_2),
+                airQuality: getAverage(data.MQ2_1, data.MQ2_2),
+                noise: data.noise != null ? data.noise : 0 
             };
             
-            // Broadcast to React frontend
             io.emit('live-sensor-data', sensorPayload);
         }
 
@@ -162,7 +168,7 @@ mqttClient.on('message', async (topic, message) => {
             const returnPayload = JSON.stringify({
                 securityOfficerNumber: securityOfficerNumber, 
                 emergencyContact: employee.emergencyContactNumber || "N/A",
-                emergencyServices: "1990"
+                emergencyServices: "0764175179"
             });
 
             mqttClient.publish('esp32/wearable1', returnPayload, (err) => {
